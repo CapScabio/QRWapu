@@ -1,12 +1,16 @@
 {
-  "name": "wapu-pos",
-  "version": "0.1.0",
+  "name": "qrwapu",
+  "version": "1.0.0",
+  "description": "Terminal POS Lightning Cero Friccion",
+  "author": "Capitan del Escabio",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "framer-motion": "^12.38.0",
@@ -21,6 +25,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.6"
   }
 }
