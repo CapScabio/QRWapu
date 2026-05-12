@@ -26,31 +26,50 @@ export default function PosPage({ params }: { params: { storeId: string } }) {
     }
   }, [params.storeId]);
 
-  const handleAmountSubmit = (e: React.FormEvent) => {
+  const handleAmountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) return;
     
     setIsProcessing(true);
     
-    // Simulate API call to Wapu to get Tentative Amount and generate Deposit Invoice
-    setTimeout(() => {
-      // Mock exchange rate: 1 USDT = 1432 ARS = 14320 Sats (approx)
-      // So 1 ARS = 10 Sats
-      const sats = Number(amount) * 10; 
-      
-      setInvoice({
-        pr: 'lnbc10u1p5u382fhp58xsrl6gyqhec50nydnmjnhe0lqs7er2px7zhj4w7geqhz9pqmanqnp4qgt72s92ak77wsszt7dqs8shkjy0re5r8fs8tnsay4zg7gpjekrr7...',
-        sats
+    try {
+      const res = await fetch('/api/invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amountArs: Number(amount), cbu: storeInfo?.cbu })
       });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setInvoice({
+        pr: data.pr,
+        sats: data.sats
+      });
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
       setIsProcessing(false);
-    }, 1500);
+    }
   };
 
-  const handleSimulatePayment = () => {
+
+  const handleSimulatePayment = async () => {
+    // In a real flow, we would poll /api/status until the invoice is paid.
+    // Here we simulate the user confirming they paid.
     setIsPaid(true);
-    // Here our backend would detect the payment, and automatically fire a fiat_transfer
-    // via Wapu API to the store's CBU.
+    
+    try {
+      await fetch('/api/transfer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amountArs: Number(amount), cbu: storeInfo?.cbu })
+      });
+    } catch (err) {
+      console.error(err);
+    }
   };
+
 
   if (!storeInfo) return <div style={{ padding: '2rem', textAlign: 'center' }}>Cargando...</div>;
 
