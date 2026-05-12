@@ -12,7 +12,7 @@ export default function PosPage({ params }: { params: { storeId: string } }) {
   const [isProcessing, setIsProcessing] = useState(false);
   
   // This simulates the backend call to generate the invoice
-  const [invoice, setInvoice] = useState<{ pr: string, sats: number } | null>(null);
+  const [invoice, setInvoice] = useState<{ id: string, pr: string, sats: number } | null>(null);
   const [isPaid, setIsPaid] = useState(false);
 
   useEffect(() => {
@@ -25,6 +25,31 @@ export default function PosPage({ params }: { params: { storeId: string } }) {
       setStoreInfo({ name: 'Comercio ' + params.storeId, cbu: 'alias.fake' });
     }
   }, [params.storeId]);
+
+  // Polling effect to check invoice status automatically
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (invoice && !isPaid) {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/status?invoiceId=${invoice.id}`);
+          const data = await res.json();
+          if (data.status === 'Completed' || data.status === 'Taken') {
+            setIsPaid(true);
+            // Trigger fiat settlement automatically
+            await fetch('/api/transfer', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ amountArs: Number(amount), cbu: storeInfo?.cbu, invoiceId: invoice.id })
+            });
+          }
+        } catch (err) {
+          console.error("Polling error:", err);
+        }
+      }, 3000); // Check every 3 seconds
+    }
+    return () => clearInterval(interval);
+  }, [invoice, isPaid, amount, storeInfo]);
 
   const handleAmountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +68,7 @@ export default function PosPage({ params }: { params: { storeId: string } }) {
       if (!res.ok) throw new Error(data.error);
 
       setInvoice({
+        id: data.invoiceId,
         pr: data.pr,
         sats: data.sats
       });
@@ -54,21 +80,7 @@ export default function PosPage({ params }: { params: { storeId: string } }) {
   };
 
 
-  const handleSimulatePayment = async () => {
-    // In a real flow, we would poll /api/status until the invoice is paid.
-    // Here we simulate the user confirming they paid.
-    setIsPaid(true);
-    
-    try {
-      await fetch('/api/transfer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amountArs: Number(amount), cbu: storeInfo?.cbu })
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  };
+
 
 
   if (!storeInfo) return <div style={{ padding: '2rem', textAlign: 'center' }}>Cargando...</div>;
@@ -156,16 +168,19 @@ export default function PosPage({ params }: { params: { storeId: string } }) {
               />
             </div>
 
-            <button 
-              className="btn-primary" 
-              style={{ width: '100%', marginBottom: '1rem' }}
-              onClick={handleSimulatePayment}
-            >
-              <Zap size={20} /> Pagar con mi Wallet
-            </button>
+            {/* Auto-polling indicator */}
+            <div style={{ marginTop: '1.5rem', color: 'var(--accent)', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+              <motion.div
+                animate={{ opacity: [1, 0.5, 1] }}
+                transition={{ repeat: Infinity, duration: 1.5 }}
+              >
+                Esperando pago...
+              </motion.div>
+            </div>
+
             <button 
               className="btn-secondary" 
-              style={{ width: '100%' }}
+              style={{ width: '100%', marginTop: '1.5rem' }}
               onClick={() => setInvoice(null)}
             >
               Cancelar
