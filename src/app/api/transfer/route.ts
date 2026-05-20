@@ -17,18 +17,19 @@ export async function POST(request: Request) {
     }
 
     // Llamar a /transactions/create con type 'fast_fiat_transfer'
+    // El endpoint espera multipart/form-data
+    const formData = new FormData();
+    formData.append('type', 'fast_fiat_transfer');
+    formData.append('payment_amount', String(amountArs));
+    formData.append('currency_taken', 'USDT');
+    formData.append('alias', cbu);
+
     const transferRes = await fetch(`${API_URL}/transactions/create`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         'X-API-Key': API_KEY
       },
-      body: JSON.stringify({
-        type: 'fast_fiat_transfer',
-        amount: Number(amountArs),
-        cbu_alias: cbu,
-        currency: 'ARS'
-      })
+      body: formData
     });
 
     if (!transferRes.ok) {

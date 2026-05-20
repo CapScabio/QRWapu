@@ -21,30 +21,48 @@ export async function POST(request: Request) {
       });
     }
 
-    // 1. Obtener tipo de cambio (Tentative amount)
-    // Asumiendo que el endpoint es /exchange_rates o /transactions/tentative-amount
-    const rateRes = await fetch(`${API_URL}/exchange_rates`);
-    const rateData = await rateRes.json();
-    
-    // Buscar la tasa USDT/ARS
-    const usdtArs = rateData.rates?.find((r: any) => r.pair === 'USDT/ARS');
-    const btcUsd = rateData.rates?.find((r: any) => r.pair === 'BTC/USD');
-    
-    let usdtAmount = 0;
-    let satsAmount = 0;
+    // 1. Obtener costo en USDT (Tentative amount)
+    const tentativeRes = await fetch(`${API_URL}/transactions/tentative-amount`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY
+      },
+      body: JSON.stringify({
+        amount: Number(amountArs),
+        currency_payment: 'ARS',
+        currency_taken: 'USDT',
+        type: 'fast_fiat_transfer'
+      })
+    });
 
-    if (usdtArs && btcUsd) {
-      usdtAmount = Number(amountArs) / usdtArs.buy; // Convert ARS to USDT
-      // 1 BTC = btcUsd.sell USDT => 1 USDT = 100,000,000 / btcUsd.sell Sats
-      satsAmount = Math.floor(usdtAmount * (100000000 / btcUsd.sell));
-    } else {
-      // Fallback
-      satsAmount = Number(amountArs) * 10;
-      usdtAmount = satsAmount / 14300; 
+    if (!tentativeRes.ok) {
+      const err = await tentativeRes.text();
+      console.error("Error from Wapu tentative-amount:", err);
+      throw new Error("Error calculating tentative amount from Wapu");
     }
 
-    // 2. Generar Factura Lightning
-    // Endpoint: POST /wallet/deposit_lightning
+    const tentativeData = await tentativeRes.json();
+    const usdtAmount = tentativeData.total_amount; // Costo total en USDT incluyendo comisiones
+
+    // 2. Obtener exchange rates para convertir USDT a SATs
+    const rateRes = await fetch(`${API_URL}/exchange_rates`);
+    if (!rateRes.ok) {
+      throw new Error("No se pudieron obtener las tasas de cambio de Wapu");
+    }
+    const rateData = await rateRes.json();
+    
+    // Buscar la tasa BTC/USD (o BTC/USDT)
+    const btcUsd = rateData.rates?.find((r: any) => r.pair === 'BTC/USD');
+    if (!btcUsd) {
+      throw new Error("No se pudo encontrar el par BTC/USD en las cotizaciones");
+    }
+    
+    // 1 BTC = btcUsd.sell USDT => 1 USDT = 100,000,000 / btcUsd.sell Sats
+    const satsAmount = Math.ceil(usdtAmount * (100000000 / btcUsd.sell));
+
+    // 3. Generar Factura Lightning
+    // Wapu deposit_lightning espera "amount" en SATs
     const depositRes = await fetch(`${API_URL}/wallet/deposit_lightning`, {
       method: 'POST',
       headers: {
@@ -52,8 +70,7 @@ export async function POST(request: Request) {
         'X-API-Key': API_KEY
       },
       body: JSON.stringify({
-        amount: usdtAmount, // Wapu suele tomar el deposito en USDT o SATS
-        // O dependiendo del schema exacto, a veces piden "amount_sats"
+        amount: satsAmount
       })
     });
 
@@ -67,8 +84,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      invoiceId: depositData.transaction_id,
-      pr: depositData.lnurl_pr_invoice || depositData.payment_request,
+      invoiceId: depositData.transaction_id || depositData.id,
+      pr: depositData.lnurl_pr_invoice || depositData.payment_request || depositData.address_destination,
       sats: satsAmount
     });
 
